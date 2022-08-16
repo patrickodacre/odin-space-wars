@@ -5,217 +5,107 @@ import "core:runtime"
 import SDL "vendor:sdl2"
 import SDL_Image "vendor:sdl2/image"
 
+SHIP_IDX :: 0
+LASER_IDX :: 1
 
-
-//
-
-// Entity :: struct
-// {
-	// tex: ^SDL.Texture,
-	// source: ^SDL.Rect,
-	// dest: ^SDL.Rect,
-// }
-
-CTX :: struct
-{
-	window : ^SDL.Window,
-
-	entities: [3]Entity,
-}
-
-ctx := CTX{}
-
-window : ^SDL.Window
-renderer : ^SDL.Renderer
-renderer_2 : ^SDL.Renderer
-texture_ship : ^SDL.Texture
-texture_laser : ^SDL.Texture
-ship_source : SDL.Rect
-ship : SDL.Rect
-laser_bg : SDL.Rect
-laser : SDL.Rect
-
-move_up := false
-move_down := false
-move_left := false
-move_right := false
-
-ship_index := 0
-laser_index := 1
+WINDOW_TITLE :: "Asteroids"
+// WINDOW_X : i32 = 400
+// WINDOW_Y : i32 = 400
+WINDOW_X : i32 = SDL.WINDOWPOS_UNDEFINED // centered
+WINDOW_Y : i32 = SDL.WINDOWPOS_UNDEFINED
+WINDOW_W : i32 = 800
+WINDOW_H : i32 = 600
+WINDOW_FLAGS  :: SDL.WINDOW_SHOWN // force show on screen
 
 Entity :: struct
 {
-	t: ^SDL.Texture,
-	b: SDL.Rect,
-	r: SDL.Rect,
+	tex: ^SDL.Texture,
+	source: ^SDL.Rect,
+	dest: ^SDL.Rect,
 }
 
-entities := [3]Entity{}
+CTX :: struct
+{
+	game_over: bool,
+	window: ^SDL.Window,
+	renderer: ^SDL.Renderer,
+
+	entities: [3]Entity,
+	moving_up: bool,
+	moving_down: bool,
+	moving_left: bool,
+	moving_right: bool,
+
+	velocity: f64,
+	now_time: f64,
+	prev_time: f64,
+	delta_time: f64,
+}
+
+ctx := CTX{game_over = false}
 
 main :: proc()
 {
 
 	// INIT SDL
 
-	event : SDL.Event
     SDL.SetHint(SDL.HINT_RENDER_SCALE_QUALITY, "2")
     SDL.Init(SDL.INIT_EVERYTHING)
+	SDL_Image.Init(SDL_Image.INIT_PNG)
 
 
 	// INIT Resources
-
-
-
-    //Create a window with a title, "Getting Started", in the centre
-    //(or undefined x and y positions), with dimensions of 800 px width
-    //and 600 px height and force it to be shown on screen
-    window = SDL.CreateWindow("Asteroids", SDL.WINDOWPOS_UNDEFINED, SDL.WINDOWPOS_UNDEFINED, 800, 600, SDL.WINDOW_SHOWN)
-    renderer = SDL.CreateRenderer(
-    	window,
-    	-1,
-    	SDL.RENDERER_PRESENTVSYNC | SDL.RENDERER_ACCELERATED | SDL.RENDERER_TARGETTEXTURE
-    	)
-    // renderer_2 = SDL.CreateRenderer(window, -1, SDL.RENDERER_ACCELERATED)
-
-
-    // ship_source
-    // this holds the ship image
-    ship_source.x = 0
-    ship_source.y = 0
-    ship_source.w = 32
-    ship_source.h = 32
-
-    // but this is the window that can be moved around on the screen.
-    // why 2? b/c RenderCopy needs both a source (ship_source) and destination (ship)
-    // position of the ship
-    ship.x = 390
-    ship.y = 530
-    ship.w = 32
-    ship.h = 32
-
-
-    laser_bg.x = 0
-    laser_bg.y = 0
-    laser_bg.w = 32
-    laser_bg.h = 32
-
-    laser.x = 40
-    laser.y = 40
-    laser.w = 32
-    laser.h = 32
-
-
-    // create our texture
 	{
-		screen : ^SDL.Surface
-		image : ^SDL.Surface
 
-		// screen
-		screen = SDL.GetWindowSurface(window)
+	    ctx.window = SDL.CreateWindow(WINDOW_TITLE, WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H, WINDOW_FLAGS)
 
-		SDL_Image.Init(SDL_Image.INIT_PNG)
-
-
-
-
-		image = SDL_Image.Load("assets/ship_2.png")
-
-		texture_ship = SDL.CreateTextureFromSurface(renderer, image)
-		// created texture, so we're done with the surface
-		SDL.FreeSurface(image)
-
-		image = SDL_Image.Load("assets/laser.png")
-		texture_laser = SDL.CreateTextureFromSurface(renderer, image)
-		SDL.FreeSurface(image)
+	    ctx.renderer = SDL.CreateRenderer(
+	    	ctx.window,
+	    	-1,
+	    	SDL.RENDERER_PRESENTVSYNC | SDL.RENDERER_ACCELERATED | SDL.RENDERER_TARGETTEXTURE
+		)
 
 	}
 
-	// load our positions
-    entities[ship_index] = Entity{t = texture_ship, b = ship_source, r = ship}
-    entities[laser_index] = Entity{t = texture_laser, b = laser_bg, r = laser}
-
-	// time
-
-	velocity : f64 = 400
-	now := f64(SDL.GetPerformanceCounter())
-	prev_time : f64 = 0
-	delta_time : f64 =  0.01
-	FPS : f64 : 60
-
-	// game loop
-    for
+	// ENTITIES
     {
-	    now = f64(SDL.GetPerformanceCounter()) / f64(SDL.GetPerformanceFrequency())
-	    delta_time = now - prev_time
-	    prev_time = now
 
-    	if SDL.PollEvent(&event)
-    	{
-    		if event.type == SDL.EventType.QUIT
-    		{
-    			break;
-    		}
+	    // SHIP
 
-			if event.type == SDL.EventType.KEYDOWN
-			{
-				state := SDL.GetKeyboardState(nil)
+		ship_img : ^SDL.Surface = SDL_Image.Load("assets/ship_2.png")
+		ship_tex := SDL.CreateTextureFromSurface(ctx.renderer, ship_img)
 
-				move_left = state[SDL.Scancode.A] > 0
-				move_right = state[SDL.Scancode.D] > 0
-				move_up = state[SDL.Scancode.W] > 0
-				move_down = state[SDL.Scancode.S] > 0
+		if ship_tex == nil
+		{
+			fmt.println("Error")
+		}
+
+	    ship_entity := Entity{
+	    	tex = ship_tex,
+	    	source = &SDL.Rect{
+	    		x = 0,
+	    		y = 0,
+	    		w = 32,
+	    		h = 32,
+			},
+			dest = &SDL.Rect{
+				x = 390,
+				y = 530,
+				w = 32,
+				h = 32,
 			}
+	    }
 
-			if event.type == SDL.EventType.KEYUP
-			{
-
-				state := SDL.GetKeyboardState(nil)
-
-				move_left = state[SDL.Scancode.A] > 0
-				move_right = state[SDL.Scancode.D] > 0
-				move_up = state[SDL.Scancode.W] > 0
-				move_down = state[SDL.Scancode.S] > 0
-			}
-    	}
-
-    	if move_left
-    	{
-			entities[ship_index].r.x -= i32(velocity * delta_time)
-    	}
-
-		if move_right
-		{
-			entities[ship_index].r.x += i32(velocity * delta_time)
-		}
-
-		if move_up
-		{
-			entities[ship_index].r.y -= i32(velocity * delta_time)
-		}
-
-		if move_down
-		{
-			entities[ship_index].r.y += i32(velocity * delta_time)
-		}
-
-    	SDL.RenderClear(renderer)
-    	for e, _ in entities
-    	{
-
-	    	t := e.t
-	    	b := e.b
-	    	r := e.r
-	    	SDL.RenderCopy(renderer, t, &b, &r)
-    	}
+	    ctx.entities[SHIP_IDX] = ship_entity
 
 
-    	SDL.RenderPresent(renderer)
-
+	    laser_img : ^SDL.Surface = SDL_Image.Load("assets/laser.png")
     }
 
+    loop()
 
     // Cleanup
-	SDL.DestroyWindow(window)
+	SDL.DestroyWindow(ctx.window)
 	SDL.Quit()
 
 }
@@ -223,30 +113,121 @@ main :: proc()
 
 fire :: proc()
 {
-	steps : i32 = 1
+	// steps : i32 = 1
+//
+	// starting_position := [2]i32{ship.x, ship.y}
+//
+	// fmt.println("Starting position", starting_position)
+//
+	// laser.x = starting_position[0]
+	// laser.y = starting_position[1]
+//
+	// fmt.println("fire thing...")
+	// for
+	// {
+		// SDL.RenderClear(renderer)
+		// SDL.RenderCopy(renderer, texture_laser, &laser_bg, &laser)
+		// SDL.RenderCopy(renderer, texture_ship, &ship_source, &ship)
+		// SDL.RenderPresent(renderer)
+//
+		// laser.y = laser.y - steps
+//
+		// SDL.Delay(1)
+//
+		// if laser.y < 0
+		// {
+			// break;
+		// }
+	// }
+}
 
-	starting_position := [2]i32{ship.x, ship.y}
+loop :: proc()
+{
+	ctx.velocity = 400
+	ctx.now_time = f64(SDL.GetPerformanceCounter())
+	ctx.prev_time = 0
+	ctx.delta_time =  0.001
 
-	fmt.println("Starting position", starting_position)
+	event : SDL.Event
 
-	laser.x = starting_position[0]
-	laser.y = starting_position[1]
+	for !ctx.game_over
+    {
+    	// process input
+    	{
 
-	fmt.println("fire thing...")
-	for
-	{
-		SDL.RenderClear(renderer)
-		SDL.RenderCopy(renderer, texture_laser, &laser_bg, &laser)
-		SDL.RenderCopy(renderer, texture_ship, &ship_source, &ship)
-		SDL.RenderPresent(renderer)
+		    ctx.now_time = f64(SDL.GetPerformanceCounter()) / f64(SDL.GetPerformanceFrequency())
+		    ctx.delta_time = ctx.now_time - ctx.prev_time
+		    ctx.prev_time = ctx.now_time
 
-		laser.y = laser.y - steps
+	    	if SDL.PollEvent(&event)
+	    	{
+	    		if event.type == SDL.EventType.QUIT
+	    		{
+	    			ctx.game_over = true
+	    		}
 
-		SDL.Delay(1)
+				if event.type == SDL.EventType.KEYDOWN
+				{
+					state := SDL.GetKeyboardState(nil)
 
-		if laser.y < 0
-		{
-			break;
-		}
-	}
+					ctx.moving_left = state[SDL.Scancode.A] > 0
+					ctx.moving_right = state[SDL.Scancode.D] > 0
+					ctx.moving_up = state[SDL.Scancode.W] > 0
+					ctx.moving_down = state[SDL.Scancode.S] > 0
+				}
+
+				if event.type == SDL.EventType.KEYUP
+				{
+
+					state := SDL.GetKeyboardState(nil)
+
+					ctx.moving_left = state[SDL.Scancode.A] > 0
+					ctx.moving_right = state[SDL.Scancode.D] > 0
+					ctx.moving_up = state[SDL.Scancode.W] > 0
+					ctx.moving_down = state[SDL.Scancode.S] > 0
+				}
+	    	}
+    	}
+
+    	// update
+    	{
+
+	    	if ctx.moving_left
+	    	{
+				ctx.entities[SHIP_IDX].dest.x -= i32(ctx.velocity * ctx.delta_time)
+	    	}
+
+			if ctx.moving_right
+			{
+				ctx.entities[SHIP_IDX].dest.x += i32(ctx.velocity * ctx.delta_time)
+			}
+
+			if ctx.moving_up
+			{
+				ctx.entities[SHIP_IDX].dest.y -= i32(ctx.velocity * ctx.delta_time)
+			}
+
+			if ctx.moving_down
+			{
+				ctx.entities[SHIP_IDX].dest.y += i32(ctx.velocity * ctx.delta_time)
+			}
+    	}
+
+
+    	// draw
+    	{
+
+	    	SDL.RenderClear(ctx.renderer)
+	    	for e, _ in ctx.entities
+	    	{
+		    	SDL.RenderCopy(ctx.renderer, e.tex, e.source, e.dest)
+	    	}
+
+	    	SDL.RenderPresent(ctx.renderer)
+
+    	}
+
+    }
+
+
 }
