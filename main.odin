@@ -2,10 +2,13 @@ package main
 
 import "core:fmt"
 import "core:runtime"
+import "core:math/rand"
 import SDL "vendor:sdl2"
 import SDL_Image "vendor:sdl2/image"
 
 SHIP_IDX :: 0
+ENEMY_IDX :: 1
+
 LASER_SPEED :: 2
 
 WINDOW_TITLE :: "Asteroids"
@@ -37,6 +40,9 @@ CTX :: struct
 
 	ship_img: ^SDL.Surface,
 	ship_tex: ^SDL.Texture,
+
+	enemy_img: ^SDL.Surface,
+	enemy_tex: ^SDL.Texture,
 
 	laser_img: ^SDL.Surface,
 	laser_tex: ^SDL.Texture,
@@ -114,6 +120,37 @@ main :: proc()
 	    }
 
 	    ctx.entities[SHIP_IDX] = ship_entity
+
+	    // ENEMY
+		ctx.enemy_img = SDL_Image.Load("assets/ship_1.png")
+		ctx.enemy_tex = SDL.CreateTextureFromSurface(ctx.renderer, ctx.enemy_img)
+
+		if ctx.enemy_tex == nil
+		{
+			fmt.println("Error")
+		}
+
+	    enemy_entity := Entity{
+	    	tex = ctx.enemy_tex,
+	    	source = SDL.Rect{
+	    		x = 0,
+	    		y = 0,
+	    		w = 32,
+	    		h = 32,
+			},
+			dest = SDL.Rect{
+				x = 390,
+				y = 10,
+				w = 32,
+				h = 32,
+			}
+	    }
+
+	    ctx.entities[ENEMY_IDX] = enemy_entity
+
+
+
+	    // LASERS
 
 	    ctx.laser_img = SDL_Image.Load("assets/laser.png")
 	    ctx.laser_tex = SDL.CreateTextureFromSurface(ctx.renderer, ctx.laser_img)
@@ -218,6 +255,7 @@ loop :: proc()
     	// update
     	{
 
+    		// UPDATE SHIP
 	    	if ctx.moving_left
 	    	{
 				ctx.entities[SHIP_IDX].dest.x -= i32(ctx.velocity * ctx.delta_time)
@@ -238,8 +276,7 @@ loop :: proc()
 				ctx.entities[SHIP_IDX].dest.y += i32(ctx.velocity * ctx.delta_time)
 			}
 
-			// fmt.println("how many lasers??", len(ctx.lasers))
-
+			// UPDATE LASER
 			if ctx.shoot
 			{
 
@@ -288,12 +325,75 @@ loop :: proc()
 
 			ctx.shoot = false
 
-			// update all lasers
+			enemy := &ctx.entities[ENEMY_IDX]
+
+			// SHOOT LASERS
 			for l, idx in &ctx.lasers
 			{
 				if (l.dest.y > 0)
 				{
 					l.dest.y -= i32((ctx.velocity * LASER_SPEED) * ctx.delta_time)
+
+					bounds_x_left := l.dest.x - 20
+					bounds_x_right := l.dest.x + 20
+
+					bounds_y_bottom := l.dest.y + 5
+
+					// HIT ENEMY?
+					if enemy.dest.x >= bounds_x_left &&
+						enemy.dest.x <= bounds_x_right &&
+						enemy.dest.y >= bounds_y_bottom
+					{
+						fmt.println("HIT!")
+						// TODO: respawn the enemy
+						num := rand.int_max(150 - 20) + 20
+						num_2 := rand.int_max(150 - 20) + 20
+
+						// if num > num_2
+						// {
+							new_x_left := enemy.dest.x - i32(num)
+							new_x_right := enemy.dest.x + i32(num)
+
+
+							if new_x_left > 0
+							{
+								enemy.dest.x = new_x_left
+							}
+							else if new_x_right < (WINDOW_W - 20)
+							{
+								enemy.dest.x = new_x_right
+							}
+
+							new_y_up := enemy.dest.y - i32(num)
+							new_y_down := enemy.dest.y + i32(num)
+
+							if new_y_up > 20
+							{
+								enemy.dest.y = new_y_up
+							}
+							else if new_y_down < (WINDOW_H - 20)
+							{
+								enemy.dest.y = new_y_down
+							}
+
+						// }
+						// else
+						// {
+							// new_x := enemy.dest.x + i32(num_2)
+							// new_y := enemy.dest.y + i32(num)
+//
+							// if new_x > 10
+							// {
+								// enemy.dest.x += i32(num_2)
+							// }
+							// if new_y > 10
+							// {
+								// enemy.dest.y -= i32(num)
+							// }
+//
+//
+						// }
+					}
 				}
 			}
 
