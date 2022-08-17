@@ -6,22 +6,24 @@ import SDL "vendor:sdl2"
 import SDL_Image "vendor:sdl2/image"
 
 SHIP_IDX :: 0
-LASER_IDX :: 1
+LASER_SPEED :: 2
 
 WINDOW_TITLE :: "Asteroids"
 // WINDOW_X : i32 = 400
 // WINDOW_Y : i32 = 400
 WINDOW_X : i32 = SDL.WINDOWPOS_UNDEFINED // centered
 WINDOW_Y : i32 = SDL.WINDOWPOS_UNDEFINED
-WINDOW_W : i32 = 800
-WINDOW_H : i32 = 600
+WINDOW_W : i32 = 1200
+WINDOW_H : i32 = 1000
 WINDOW_FLAGS  :: SDL.WINDOW_SHOWN // force show on screen
+SHIP_START_Y : i32 = 600
+SHIP_START_X : i32 = 600
 
 Entity :: struct
 {
 	tex: ^SDL.Texture,
-	source: ^SDL.Rect,
-	dest: ^SDL.Rect,
+	source: SDL.Rect,
+	dest: SDL.Rect,
 }
 
 CTX :: struct
@@ -30,19 +32,34 @@ CTX :: struct
 	window: ^SDL.Window,
 	renderer: ^SDL.Renderer,
 
+
 	entities: [3]Entity,
+
+	ship_img: ^SDL.Surface,
+	ship_tex: ^SDL.Texture,
+
+	laser_img: ^SDL.Surface,
+	laser_tex: ^SDL.Texture,
+	lasers: [dynamic]Entity,
+
 	moving_up: bool,
 	moving_down: bool,
 	moving_left: bool,
 	moving_right: bool,
+	shoot: bool,
 
 	velocity: f64,
 	now_time: f64,
 	prev_time: f64,
 	delta_time: f64,
+
+	fire_count: u64,
 }
 
-ctx := CTX{game_over = false}
+ctx := CTX{
+	game_over = false,
+	lasers = make([dynamic]Entity, 0, 30),
+}
 
 main :: proc()
 {
@@ -72,23 +89,23 @@ main :: proc()
 
 	    // SHIP
 
-		ship_img : ^SDL.Surface = SDL_Image.Load("assets/ship_2.png")
-		ship_tex := SDL.CreateTextureFromSurface(ctx.renderer, ship_img)
+		ctx.ship_img = SDL_Image.Load("assets/ship_2.png")
+		ctx.ship_tex = SDL.CreateTextureFromSurface(ctx.renderer, ctx.ship_img)
 
-		if ship_tex == nil
+		if ctx.ship_tex == nil
 		{
 			fmt.println("Error")
 		}
 
 	    ship_entity := Entity{
-	    	tex = ship_tex,
-	    	source = &SDL.Rect{
+	    	tex = ctx.ship_tex,
+	    	source = SDL.Rect{
 	    		x = 0,
 	    		y = 0,
 	    		w = 32,
 	    		h = 32,
 			},
-			dest = &SDL.Rect{
+			dest = SDL.Rect{
 				x = 390,
 				y = 530,
 				w = 32,
@@ -98,8 +115,31 @@ main :: proc()
 
 	    ctx.entities[SHIP_IDX] = ship_entity
 
+	    ctx.laser_img = SDL_Image.Load("assets/laser.png")
+	    ctx.laser_tex = SDL.CreateTextureFromSurface(ctx.renderer, ctx.laser_img)
 
-	    laser_img : ^SDL.Surface = SDL_Image.Load("assets/laser.png")
+	    for i in 0..=5
+	    {
+
+	    	laser := Entity{
+	    		tex = ctx.laser_tex,
+	    		source = SDL.Rect{
+	    			x = 0,
+	    			y = 0,
+	    			w = 32,
+	    			h = 32,
+    			},
+	    		dest = SDL.Rect{
+	    			x = 0,
+	    			y = i32(i),
+	    			w = 32,
+	    			h = 32
+	    		}
+	    	}
+
+	    	append(&ctx.lasers, laser)
+	    }
+
     }
 
     loop()
@@ -108,37 +148,6 @@ main :: proc()
 	SDL.DestroyWindow(ctx.window)
 	SDL.Quit()
 
-}
-
-
-fire :: proc()
-{
-	// steps : i32 = 1
-//
-	// starting_position := [2]i32{ship.x, ship.y}
-//
-	// fmt.println("Starting position", starting_position)
-//
-	// laser.x = starting_position[0]
-	// laser.y = starting_position[1]
-//
-	// fmt.println("fire thing...")
-	// for
-	// {
-		// SDL.RenderClear(renderer)
-		// SDL.RenderCopy(renderer, texture_laser, &laser_bg, &laser)
-		// SDL.RenderCopy(renderer, texture_ship, &ship_source, &ship)
-		// SDL.RenderPresent(renderer)
-//
-		// laser.y = laser.y - steps
-//
-		// SDL.Delay(1)
-//
-		// if laser.y < 0
-		// {
-			// break;
-		// }
-	// }
 }
 
 loop :: proc()
@@ -174,6 +183,21 @@ loop :: proc()
 					ctx.moving_right = state[SDL.Scancode.D] > 0
 					ctx.moving_up = state[SDL.Scancode.W] > 0
 					ctx.moving_down = state[SDL.Scancode.S] > 0
+
+					#partial switch event.key.keysym.scancode
+					{
+						case .RETURN:
+							fmt.println(len(ctx.lasers))
+							for l, _ in ctx.lasers
+							{
+								fmt.println(l)
+							}
+						case .SPACE:
+							fmt.println("FIRE!")
+							ctx.shoot = true
+					}
+
+
 				}
 
 				if event.type == SDL.EventType.KEYUP
@@ -185,8 +209,10 @@ loop :: proc()
 					ctx.moving_right = state[SDL.Scancode.D] > 0
 					ctx.moving_up = state[SDL.Scancode.W] > 0
 					ctx.moving_down = state[SDL.Scancode.S] > 0
+
 				}
 	    	}
+
     	}
 
     	// update
@@ -211,6 +237,66 @@ loop :: proc()
 			{
 				ctx.entities[SHIP_IDX].dest.y += i32(ctx.velocity * ctx.delta_time)
 			}
+
+			// fmt.println("how many lasers??", len(ctx.lasers))
+
+			if ctx.shoot
+			{
+
+				fmt.println("SHOOTING!")
+				starting_x := ctx.entities[SHIP_IDX].dest.x
+				starting_y := ctx.entities[SHIP_IDX].dest.y
+
+				found := false
+
+				// reuse existing lasers
+				check: for l, _ in &ctx.lasers
+				{
+					if l.dest.y < 0
+					{
+						l.dest.x = starting_x
+						l.dest.y = starting_y
+						fmt.println("FOUND!")
+						fmt.println("FOUND!")
+						found = true
+						break check
+					}
+				}
+
+				if !found
+				{
+
+					append(&ctx.lasers, Entity{
+						tex = ctx.laser_tex,
+						source = SDL.Rect{
+							x = 0,
+							y = 0,
+							w = 32,
+							h = 32,
+						},
+						dest = SDL.Rect{
+							x = starting_x,
+							y = starting_y,
+							w = 32,
+							h = 32,
+						}
+					})
+
+				}
+
+			}
+
+			ctx.shoot = false
+
+			// update all lasers
+			for l, idx in &ctx.lasers
+			{
+				if (l.dest.y > 0)
+				{
+					l.dest.y -= i32((ctx.velocity * LASER_SPEED) * ctx.delta_time)
+				}
+			}
+
     	}
 
 
@@ -218,9 +304,17 @@ loop :: proc()
     	{
 
 	    	SDL.RenderClear(ctx.renderer)
-	    	for e, _ in ctx.entities
+	    	for e, _ in &ctx.entities
 	    	{
-		    	SDL.RenderCopy(ctx.renderer, e.tex, e.source, e.dest)
+		    	SDL.RenderCopy(ctx.renderer, e.tex, &e.source, &e.dest)
+	    	}
+
+	    	for l, _ in &ctx.lasers
+	    	{
+	    		if l.dest.y > 0
+	    		{
+		    		SDL.RenderCopy(ctx.renderer, l.tex, &l.source, &l.dest)
+	    		}
 	    	}
 
 	    	SDL.RenderPresent(ctx.renderer)
