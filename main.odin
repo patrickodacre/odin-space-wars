@@ -19,8 +19,8 @@ WINDOW_Y : i32 = SDL.WINDOWPOS_UNDEFINED
 WINDOW_W : i32 = 1200
 WINDOW_H : i32 = 1000
 WINDOW_FLAGS  :: SDL.WINDOW_SHOWN // force show on screen
-SHIP_START_Y : i32 = 600
-SHIP_START_X : i32 = 600
+SHIP_START_Y : i32 = (WINDOW_H / 10) * 9
+SHIP_START_X : i32 = (WINDOW_W / 2) - 32
 
 Entity :: struct
 {
@@ -112,8 +112,8 @@ main :: proc()
 	    		h = 32,
 			},
 			dest = SDL.Rect{
-				x = 390,
-				y = 530,
+				x = SHIP_START_X,
+				y = SHIP_START_Y,
 				w = 32,
 				h = 32,
 			}
