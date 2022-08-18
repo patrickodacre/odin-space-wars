@@ -7,10 +7,13 @@ import SDL "vendor:sdl2"
 import SDL_Image "vendor:sdl2/image"
 
 SHIP_IDX :: 0
+SHIP_SPEED :: 2
 
-MOBS_ROW :: 20
-MAX_LASERS :: 10
+MOBS_ROW :: 5
+MAX_LASERS :: 20
 LASER_SPEED :: 3
+MOB_SPEED :: 1
+MOB_SPEED_DIVISOR :: 2
 
 WINDOW_TITLE :: "Asteroids"
 WINDOW_X : i32 = SDL.WINDOWPOS_UNDEFINED // centered
@@ -40,9 +43,11 @@ CTX :: struct
 	ship_img: ^SDL.Surface,
 	ship_tex: ^SDL.Texture,
 
+	mob_speed: f64,
 	mob_img: ^SDL.Surface,
 	mob_tex: ^SDL.Texture,
 	mobs: [dynamic]Entity,
+	mobs_moving_right: bool,
 
 	laser_speed : f64,
 	laser_img: ^SDL.Surface,
@@ -65,6 +70,7 @@ CTX :: struct
 
 ctx := CTX{
 	game_over = false,
+	mob_speed = MOB_SPEED,
 	laser_speed = LASER_SPEED,
 	lasers = make([dynamic]Entity, 0, MAX_LASERS),
 	mobs = make([dynamic]Entity, 0, 30),
@@ -198,7 +204,7 @@ loop :: proc()
 {
 	ctx.velocity = 400
 	ctx.now_time = f64(SDL.GetPerformanceCounter())
-	ctx.prev_time = 0
+    ctx.prev_time = f64(SDL.GetPerformanceCounter()) / f64(SDL.GetPerformanceFrequency())
 	ctx.delta_time =  0.001
 
 	event : SDL.Event
@@ -272,7 +278,7 @@ loop :: proc()
 
 	    	if ctx.moving_left
 	    	{
-	    		new_x := ship.dest.x - i32(ctx.velocity * ctx.delta_time)
+	    		new_x := ship.dest.x - i32((ctx.velocity * SHIP_SPEED) * ctx.delta_time)
 
 	    		if new_x > 0
 	    		{
@@ -282,7 +288,7 @@ loop :: proc()
 
 			if ctx.moving_right
 			{
-	    		new_x := ship.dest.x + i32(ctx.velocity * ctx.delta_time)
+	    		new_x := ship.dest.x + i32((ctx.velocity * SHIP_SPEED) * ctx.delta_time)
 
 	    		if new_x < (WINDOW_W - 32)
 	    		{
@@ -292,7 +298,7 @@ loop :: proc()
 
 			if ctx.moving_up
 			{
-				new_y := ship.dest.y - i32(ctx.velocity * ctx.delta_time)
+				new_y := ship.dest.y - i32((ctx.velocity * SHIP_SPEED) * ctx.delta_time)
 
 				if new_y > 0
 				{
@@ -302,7 +308,7 @@ loop :: proc()
 
 			if ctx.moving_down
 			{
-				new_y := ship.dest.y + i32(ctx.velocity * ctx.delta_time)
+				new_y := ship.dest.y + i32((ctx.velocity * SHIP_SPEED) * ctx.delta_time)
 
 				if new_y < (WINDOW_H - 32)
 				{
@@ -343,7 +349,7 @@ loop :: proc()
 			ctx.shooting = false
 
 			// SHOOT LASERS
-			for l, idx in &ctx.lasers
+			shooting: for l, idx in &ctx.lasers
 			{
 				// if y > 0 then we've fired a laser
 				if (l.dest.y > 0)
@@ -369,7 +375,8 @@ loop :: proc()
 							// TODO: increase points
 							fmt.println("HIT!")
 
-							unordered_remove(&ctx.mobs, idx)
+							// unordered_remove makes the mobs change direction at unexpected times
+							ordered_remove(&ctx.mobs, idx)
 							// reset the laser to make it available again
 							l.dest.y = -1
 
@@ -378,6 +385,42 @@ loop :: proc()
 					}
 
 				}
+			}
+
+			// moving mobs
+			if (len(ctx.mobs) > 0)
+			{
+
+				rightmost_mob := ctx.mobs[len(ctx.mobs) - 1]
+				leftmost_mob := ctx.mobs[0]
+
+				rightmost_x := rightmost_mob.dest.x
+				leftmost_x := leftmost_mob.dest.x
+
+				if rightmost_x >= (WINDOW_W - 32)
+				{
+					ctx.mobs_moving_right = false
+				}
+				else if leftmost_x <= 0
+				{
+					ctx.mobs_moving_right = true
+				}
+
+				moving_mobs: for m, _ in &ctx.mobs
+				{
+
+					if ctx.mobs_moving_right
+					{
+						move_by := i32((ctx.velocity * ctx.mob_speed) * ctx.delta_time)
+						m.dest.x += move_by / MOB_SPEED_DIVISOR
+					}
+					else
+					{
+						move_by := i32((ctx.velocity * ctx.mob_speed) * ctx.delta_time)
+						m.dest.x -= move_by / MOB_SPEED_DIVISOR
+					}
+				}
+
 			}
 
     	}
