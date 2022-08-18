@@ -6,8 +6,11 @@ import "core:math/rand"
 import SDL "vendor:sdl2"
 import SDL_Image "vendor:sdl2/image"
 
+// indicies
 SHIP_IDX :: 0
-SHIP_SPEED :: 2
+EXPLOSION_IDX :: 1
+
+SHIP_SPEED :: 1
 
 MOBS_ROW :: 5
 MAX_LASERS :: 20
@@ -39,6 +42,11 @@ CTX :: struct
 
 
 	entities: [3]Entity,
+
+	explosion_img: ^SDL.Surface,
+	explosion_tex: ^SDL.Texture,
+	explosion_timer: f64,
+
 
 	ship_img: ^SDL.Surface,
 	ship_tex: ^SDL.Texture,
@@ -129,6 +137,27 @@ main :: proc()
 	    }
 
 	    ctx.entities[SHIP_IDX] = ship_entity
+
+		ctx.explosion_img = SDL_Image.Load("assets/explosion.png")
+		ctx.explosion_tex = SDL.CreateTextureFromSurface(ctx.renderer, ctx.explosion_img)
+
+	    explosion_entity := Entity{
+	    	tex = ctx.explosion_tex,
+	    	source = SDL.Rect{
+	    		x = 0,
+	    		y = 0,
+	    		w = 100,
+	    		h = 100,
+			},
+			dest = SDL.Rect{
+				x = -100,
+				y = -100,
+				w = 32,
+				h = 32,
+			}
+	    }
+
+	    ctx.entities[EXPLOSION_IDX] = explosion_entity
 
 	    // ENEMY
 		ctx.mob_img = SDL_Image.Load("assets/ship_1.png")
@@ -320,9 +349,6 @@ loop :: proc()
 			if ctx.shooting
 			{
 
-				starting_x := ctx.entities[SHIP_IDX].dest.x
-				starting_y := ctx.entities[SHIP_IDX].dest.y
-
 				has_ammo := false
 
 				// reuse existing lasers
@@ -332,8 +358,8 @@ loop :: proc()
 					{
 						has_ammo = true
 
-						l.dest.x = starting_x
-						l.dest.y = starting_y
+						l.dest.x = ship.dest.x
+						l.dest.y = ship.dest.y
 
 						break reload
 					}
@@ -408,6 +434,37 @@ loop :: proc()
 
 				moving_mobs: for m, _ in &ctx.mobs
 				{
+
+
+					bounds_x_left := m.dest.x - 20
+					bounds_x_right := m.dest.x + 20
+					bounds_y_top := m.dest.y - 20
+					bounds_y_bottom := m.dest.y + 20
+
+					if ship.dest.x >= bounds_x_left &&
+						ship.dest.x <= bounds_x_right &&
+						ship.dest.y <= bounds_y_bottom &&
+						ship.dest.y >= bounds_y_top
+					{
+						// EXPLOSION
+						ctx.entities[EXPLOSION_IDX].dest.x = ship.dest.x
+						ctx.entities[EXPLOSION_IDX].dest.y = ship.dest.y
+
+						ctx.explosion_timer = ctx.now_time + 1
+
+						ship.dest.x = SHIP_START_X
+						ship.dest.y = SHIP_START_Y
+					}
+					else
+					{
+						if ctx.explosion_timer <= ctx.now_time
+						{
+
+							ctx.entities[EXPLOSION_IDX].dest.x = -100
+							ctx.entities[EXPLOSION_IDX].dest.y = -100
+						}
+					}
+
 
 					if ctx.mobs_moving_right
 					{
