@@ -7,9 +7,10 @@ import SDL "vendor:sdl2"
 import SDL_Image "vendor:sdl2/image"
 
 SHIP_IDX :: 0
-ENEMY_IDX :: 1
 
-LASER_SPEED :: 2
+MOBS_ROW :: 20
+MAX_LASERS :: 10
+LASER_SPEED :: 3
 
 WINDOW_TITLE :: "Asteroids"
 WINDOW_X : i32 = SDL.WINDOWPOS_UNDEFINED // centered
@@ -39,9 +40,11 @@ CTX :: struct
 	ship_img: ^SDL.Surface,
 	ship_tex: ^SDL.Texture,
 
-	enemy_img: ^SDL.Surface,
-	enemy_tex: ^SDL.Texture,
+	mob_img: ^SDL.Surface,
+	mob_tex: ^SDL.Texture,
+	mobs: [dynamic]Entity,
 
+	laser_speed : f64,
 	laser_img: ^SDL.Surface,
 	laser_tex: ^SDL.Texture,
 	lasers: [dynamic]Entity,
@@ -62,7 +65,9 @@ CTX :: struct
 
 ctx := CTX{
 	game_over = false,
-	lasers = make([dynamic]Entity, 0, 30),
+	laser_speed = LASER_SPEED,
+	lasers = make([dynamic]Entity, 0, MAX_LASERS),
+	mobs = make([dynamic]Entity, 0, 30),
 }
 
 main :: proc()
@@ -120,32 +125,35 @@ main :: proc()
 	    ctx.entities[SHIP_IDX] = ship_entity
 
 	    // ENEMY
-		ctx.enemy_img = SDL_Image.Load("assets/ship_1.png")
-		ctx.enemy_tex = SDL.CreateTextureFromSurface(ctx.renderer, ctx.enemy_img)
+		ctx.mob_img = SDL_Image.Load("assets/ship_1.png")
+		ctx.mob_tex = SDL.CreateTextureFromSurface(ctx.renderer, ctx.mob_img)
 
-		if ctx.enemy_tex == nil
+		if ctx.mob_tex == nil
 		{
 			fmt.println("Error")
 		}
 
-	    enemy_entity := Entity{
-	    	tex = ctx.enemy_tex,
-	    	source = SDL.Rect{
-	    		x = 0,
-	    		y = 0,
-	    		w = 32,
-	    		h = 32,
-			},
-			dest = SDL.Rect{
-				x = 390,
-				y = 10,
-				w = 32,
-				h = 32,
-			}
-	    }
+		for i in 1..=MOBS_ROW
+		{
 
-	    ctx.entities[ENEMY_IDX] = enemy_entity
+		    mob_entity := Entity{
+		    	tex = ctx.mob_tex,
+		    	source = SDL.Rect{
+		    		x = 0,
+		    		y = 0,
+		    		w = 32,
+		    		h = 32,
+				},
+				dest = SDL.Rect{
+					x = (WINDOW_W - 64) / MOBS_ROW * i32(i),
+					y = 30,
+					w = 32,
+					h = 32,
+				}
+		    }
 
+		    append(&ctx.mobs, mob_entity)
+		}
 
 
 	    // LASERS
@@ -153,7 +161,8 @@ main :: proc()
 	    ctx.laser_img = SDL_Image.Load("assets/laser.png")
 	    ctx.laser_tex = SDL.CreateTextureFromSurface(ctx.renderer, ctx.laser_img)
 
-	    for i in 0..=5
+	    // create ALL lasers
+	    for i in 1..=MAX_LASERS
 	    {
 
 	    	laser := Entity{
@@ -166,7 +175,7 @@ main :: proc()
     			},
 	    		dest = SDL.Rect{
 	    			x = 0,
-	    			y = i32(i),
+	    			y = -1,
 	    			w = 32,
 	    			h = 32
 	    		}
@@ -222,16 +231,21 @@ loop :: proc()
 					#partial switch event.key.keysym.scancode
 					{
 						case .RETURN:
-							fmt.println(len(ctx.lasers))
+							fmt.println("Lasers ::", len(ctx.lasers))
 							for l, _ in ctx.lasers
 							{
 								fmt.println(l)
+							}
+
+							fmt.println("Mobs ::", len(ctx.mobs))
+							for m, _ in ctx.mobs
+							{
+								fmt.println(m)
 							}
 						case .SPACE:
 							fmt.println("FIRE!")
 							ctx.shooting = true
 					}
-
 
 				}
 
@@ -254,144 +268,115 @@ loop :: proc()
     	{
 
     		// UPDATE SHIP
+    		ship := &ctx.entities[SHIP_IDX]
+
 	    	if ctx.moving_left
 	    	{
-				ctx.entities[SHIP_IDX].dest.x -= i32(ctx.velocity * ctx.delta_time)
+	    		new_x := ship.dest.x - i32(ctx.velocity * ctx.delta_time)
+
+	    		if new_x > 0
+	    		{
+					ship.dest.x = new_x
+	    		}
 	    	}
 
 			if ctx.moving_right
 			{
-				ctx.entities[SHIP_IDX].dest.x += i32(ctx.velocity * ctx.delta_time)
+	    		new_x := ship.dest.x + i32(ctx.velocity * ctx.delta_time)
+
+	    		if new_x < (WINDOW_W - 32)
+	    		{
+					ship.dest.x = new_x
+	    		}
 			}
 
 			if ctx.moving_up
 			{
-				ctx.entities[SHIP_IDX].dest.y -= i32(ctx.velocity * ctx.delta_time)
+				new_y := ship.dest.y - i32(ctx.velocity * ctx.delta_time)
+
+				if new_y > 0
+				{
+					ship.dest.y = new_y
+				}
 			}
 
 			if ctx.moving_down
 			{
-				ctx.entities[SHIP_IDX].dest.y += i32(ctx.velocity * ctx.delta_time)
+				new_y := ship.dest.y + i32(ctx.velocity * ctx.delta_time)
+
+				if new_y < (WINDOW_H - 32)
+				{
+					ship.dest.y = new_y
+				}
 			}
 
 			// UPDATE LASER
 			if ctx.shooting
 			{
 
-				fmt.println("SHOOTING!")
 				starting_x := ctx.entities[SHIP_IDX].dest.x
 				starting_y := ctx.entities[SHIP_IDX].dest.y
 
-				found := false
+				has_ammo := false
 
 				// reuse existing lasers
-				check: for l, _ in &ctx.lasers
+				reload: for l, _ in &ctx.lasers
 				{
 					if l.dest.y < 0
 					{
+						has_ammo = true
+
 						l.dest.x = starting_x
 						l.dest.y = starting_y
-						fmt.println("FOUND!")
-						fmt.println("FOUND!")
-						found = true
-						break check
+
+						break reload
 					}
 				}
 
-				if !found
+				if !has_ammo
 				{
-
-					append(&ctx.lasers, Entity{
-						tex = ctx.laser_tex,
-						source = SDL.Rect{
-							x = 0,
-							y = 0,
-							w = 32,
-							h = 32,
-						},
-						dest = SDL.Rect{
-							x = starting_x,
-							y = starting_y,
-							w = 32,
-							h = 32,
-						}
-					})
-
+					fmt.println("out of ammo!")
 				}
 
 			}
 
-
-			enemy := &ctx.entities[ENEMY_IDX]
 			ctx.shooting = false
 
 			// SHOOT LASERS
 			for l, idx in &ctx.lasers
 			{
+				// if y > 0 then we've fired a laser
 				if (l.dest.y > 0)
 				{
-					l.dest.y -= i32((ctx.velocity * LASER_SPEED) * ctx.delta_time)
+					l.dest.y -= i32((ctx.velocity * ctx.laser_speed) * ctx.delta_time)
 
 					bounds_x_left := l.dest.x - 20
 					bounds_x_right := l.dest.x + 20
 
+					// don't care if the laser is BEHIND the mob
 					bounds_y_bottom := l.dest.y + 5
 
-					// HIT ENEMY?
-					if enemy.dest.x >= bounds_x_left &&
-						enemy.dest.x <= bounds_x_right &&
-						enemy.dest.y >= bounds_y_bottom
+					// check ALL mobs
+					for m, idx in &ctx.mobs
 					{
-						fmt.println("HIT!")
-						// TODO: respawn the enemy
-						num := rand.int_max(150 - 20) + 20
-						num_2 := rand.int_max(150 - 20) + 20
 
-						// if num > num_2
-						// {
-							new_x_left := enemy.dest.x - i32(num)
-							new_x_right := enemy.dest.x + i32(num)
+						// HIT MOB?
+						if m.dest.x >= bounds_x_left &&
+							m.dest.x <= bounds_x_right &&
+							m.dest.y >= bounds_y_bottom
+						{
 
+							// TODO: increase points
+							fmt.println("HIT!")
 
-							if new_x_left > 0
-							{
-								enemy.dest.x = new_x_left
-							}
-							else if new_x_right < (WINDOW_W - 20)
-							{
-								enemy.dest.x = new_x_right
-							}
+							unordered_remove(&ctx.mobs, idx)
+							// reset the laser to make it available again
+							l.dest.y = -1
 
-							new_y_up := enemy.dest.y - i32(num)
-							new_y_down := enemy.dest.y + i32(num)
-
-							if new_y_up > 20
-							{
-								enemy.dest.y = new_y_up
-							}
-							else if new_y_down < (WINDOW_H - 20)
-							{
-								enemy.dest.y = new_y_down
-							}
-
-						// }
-						// else
-						// {
-							// new_x := enemy.dest.x + i32(num_2)
-							// new_y := enemy.dest.y + i32(num)
-//
-							// if new_x > 10
-							// {
-								// enemy.dest.x += i32(num_2)
-							// }
-							// if new_y > 10
-							// {
-								// enemy.dest.y -= i32(num)
-							// }
-//
-//
-						// }
+							// TODO: check all killed? WIN!
+						}
 					}
+
 				}
 			}
 
@@ -405,6 +390,11 @@ loop :: proc()
 	    	for e, _ in &ctx.entities
 	    	{
 		    	SDL.RenderCopy(ctx.renderer, e.tex, &e.source, &e.dest)
+	    	}
+
+	    	for m, _ in &ctx.mobs
+	    	{
+	    		SDL.RenderCopy(ctx.renderer, m.tex, &m.source, &m.dest)
 	    	}
 
 	    	for l, _ in &ctx.lasers
