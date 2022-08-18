@@ -50,7 +50,7 @@ CTX :: struct
 	moving_down: bool,
 	moving_left: bool,
 	moving_right: bool,
-	shoot: bool,
+	shooting: bool,
 
 	velocity: f64,
 	now_time: f64,
@@ -229,7 +229,7 @@ loop :: proc()
 							}
 						case .SPACE:
 							fmt.println("FIRE!")
-							ctx.shoot = true
+							ctx.shooting = true
 					}
 
 
@@ -275,7 +275,7 @@ loop :: proc()
 			}
 
 			// UPDATE LASER
-			if ctx.shoot
+			if ctx.shooting
 			{
 
 				fmt.println("SHOOTING!")
@@ -321,9 +321,9 @@ loop :: proc()
 
 			}
 
-			ctx.shoot = false
 
 			enemy := &ctx.entities[ENEMY_IDX]
+			ctx.shooting = false
 
 			// SHOOT LASERS
 			for l, idx in &ctx.lasers
